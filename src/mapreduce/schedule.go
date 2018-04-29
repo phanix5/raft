@@ -1,6 +1,9 @@
 package mapreduce
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 //
 // schedule() starts and waits for all tasks in the given phase (mapPhase
@@ -30,5 +33,62 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	//
 	// Your code here (Part III, Part IV).
 	//
+
+	readyWorkers := make(chan string)
+	taskChannel := make(chan int, ntasks)
+	var wg sync.WaitGroup
+
+	for i := 0; i < ntasks; i++ {
+		taskChannel <- i
+	}
+	done := false
+	for {
+		select {
+		case i := <-taskChannel:
+			done = false
+			var workerAddr string
+			select {
+			case workerAddr = <-registerChan:
+			case workerAddr = <-readyWorkers:
+			}
+			taskArgs := DoTaskArgs{JobName: jobName, File: "", Phase: phase, TaskNumber: i, NumOtherPhase: n_other}
+			switch phase {
+			case mapPhase:
+				taskArgs.File = mapFiles[i]
+			}
+			wg.Add(1)
+			go func(workerAddr string, taskArgs DoTaskArgs, taskChannel chan int) {
+
+				defer wg.Done()
+				ok := call(workerAddr, "Worker.DoTask", taskArgs, nil)
+				if ok {
+					go func(readyWorkers chan string, workerAddr string) {
+						readyWorkers <- workerAddr
+					}(readyWorkers, workerAddr)
+				} else {
+					fmt.Printf("Worker for task %d did not respond\n", taskArgs.TaskNumber)
+					//add task back to task channel
+					wg.Add(1)
+					go func(taskNumber int, taskChannel chan int, wg *sync.WaitGroup) {
+						defer wg.Done()
+						taskChannel <- taskNumber
+					}(taskArgs.TaskNumber, taskChannel, &wg)
+				}
+			}(workerAddr, taskArgs, taskChannel)
+		default:
+			wg.Wait()
+			if done {
+				//fmt.Println("done")
+				break
+			}
+			done = true
+		}
+		if done {
+			break
+		}
+	}
+	//fmt.Println("done")
+	//wg.Wait()
+
 	fmt.Printf("Schedule: %v done\n", phase)
 }
