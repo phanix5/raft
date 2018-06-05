@@ -370,11 +370,11 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 func (rf *Raft) DebugPrintRaftStatus() {
 	fmt.Printf("Server %v status:\n", rf.me)
 	fmt.Printf("currentTerm: %v | votedFor: %v | commitIndex: %v | lastApplied: %v\n", rf.currentTerm, rf.votedFor, rf.commitIndex, rf.lastApplied)
-	fmt.Printf("Log: [ ")
+	/*fmt.Printf("Log: [ ")
 	for _, v := range rf.log {
 		fmt.Printf(" %v-%v ", v.Command, v.Term)
 	}
-	fmt.Println("")
+	fmt.Println("")*/
 }
 
 //
@@ -557,7 +557,7 @@ func (rf *Raft) CheckMajorityCommit() {
 		var minval, count int = 1e9, 0
 		for i := range rf.peers {
 			if i != rf.me {
-				if rf.matchIndex[i] > rf.commitIndex && rf.log[rf.matchIndex[i]].Term == rf.currentTerm {
+				if rf.matchIndex[i] > rf.commitIndex {
 					count++
 					if minval > rf.matchIndex[i] {
 						minval = rf.matchIndex[i]
@@ -691,9 +691,12 @@ func (rf *Raft) ApplyToStateMachine() {
 		time.Sleep(50 * time.Millisecond)
 		rf.mu.Lock()
 		if rf.commitIndex > rf.lastApplied {
-			rf.lastApplied++
-			rf.applyCh <- ApplyMsg{Command: rf.log[rf.lastApplied-rf.lastIncludedIndex].Command, CommandIndex: rf.lastApplied, CommandValid: true}
-			//fmt.Printf("%v applied %v to state machine\n", rf.me, rf.log[rf.lastApplied])
+			for rf.lastApplied++; rf.lastApplied <= rf.commitIndex; rf.lastApplied++ {
+				rf.applyCh <- ApplyMsg{Command: rf.log[rf.lastApplied-rf.lastIncludedIndex].Command, CommandIndex: rf.lastApplied, CommandValid: true}
+				//fmt.Printf("%v applied %v to state machine\n", rf.me, rf.log[rf.lastApplied])
+			}
+			rf.lastApplied--
+			//rf.DebugPrintRaftStatus()
 		}
 		rf.persist()
 		rf.mu.Unlock()
